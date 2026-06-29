@@ -568,7 +568,7 @@ LRESULT CALLBACK SettingsProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam
                 SetWindowText(hTransparencyUpButton, L"取消");
                 SetWindowText(hTransparencyUpDisplay, L"请按下组合键...");
                 SetFocus(hwnd);
-                // SetCapture(hwnd);
+                SetCapture(hwnd);
             }
             break;
         }
@@ -593,7 +593,7 @@ LRESULT CALLBACK SettingsProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam
                 SetWindowText(hTransparencyDownButton, L"取消");
                 SetWindowText(hTransparencyDownDisplay, L"请按下组合键...");
                 SetFocus(hwnd);
-                // SetCapture(hwnd);
+                SetCapture(hwnd);
             }
             break;
         }
@@ -618,7 +618,7 @@ LRESULT CALLBACK SettingsProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam
                 SetWindowText(hCenterButton, L"取消");
                 SetWindowText(hCenterDisplay, L"请按下组合键...");
                 SetFocus(hwnd);
-                // SetCapture(hwnd);
+                SetCapture(hwnd);
             }
             break;
         }
@@ -643,7 +643,7 @@ LRESULT CALLBACK SettingsProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam
                 SetWindowText(hShakeButton, L"取消");
                 SetWindowText(hShakeDisplay, L"请按下组合键...");
                 SetFocus(hwnd);
-                // SetCapture(hwnd);
+                SetCapture(hwnd);
             }
             break;
         }
@@ -725,10 +725,10 @@ LRESULT CALLBACK SettingsProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 
             // 检测修饰键
             UINT modifiers = 0;
-            if (GetKeyState(VK_CONTROL) & 0x8000) modifiers |= MOD_CONTROL;
-            if (GetKeyState(VK_MENU) & 0x8000) modifiers |= MOD_ALT;
-            if (GetKeyState(VK_SHIFT) & 0x8000) modifiers |= MOD_SHIFT;
-            if (GetKeyState(VK_LWIN) & 0x8000 || GetKeyState(VK_RWIN) & 0x8000) modifiers |= MOD_WIN;
+            if (GetAsyncKeyState(VK_CONTROL) & 0x8000) modifiers |= MOD_CONTROL;
+            if (GetAsyncKeyState(VK_MENU) & 0x8000) modifiers |= MOD_ALT;
+            if (GetAsyncKeyState(VK_SHIFT) & 0x8000) modifiers |= MOD_SHIFT;
+            if (GetAsyncKeyState(VK_LWIN) & 0x8000 || GetAsyncKeyState(VK_RWIN) & 0x8000) modifiers |= MOD_WIN;
 
             // 如果没有修饰键，忽略单独按键（除了功能键）
             if (modifiers == 0 && wParam >= 'A' && wParam <= 'Z') {
@@ -950,38 +950,38 @@ void ShowSettingsWindow()
     }
 }
 
+// 注册单个热键，失败时尝试用默认值回退
+static void RegisterOneHotkey(HWND hwnd, int id, BOOL enable, UINT mods, UINT key, UINT defMods, UINT defKey, LPCWSTR name)
+{
+    UnregisterHotKey(hwnd, id);
+    if (!enable) return;
+    if (RegisterHotKey(hwnd, id, mods, key)) return;
+    // 当前热键冲突，尝试用默认值注册
+    if (mods == defMods && key == defKey) return; // 已经是默认值，没救了
+    if (RegisterHotKey(hwnd, id, defMods, defKey)) {
+        wchar_t msg[200];
+        swprintf_s(msg, 200, L"%s热键注册失败（可能与其他程序冲突），已恢复为默认热键", name);
+        MessageBox(hwnd, msg, L"警告", MB_OK | MB_ICONWARNING);
+    } else {
+        wchar_t msg[200];
+        swprintf_s(msg, 200, L"%s热键注册失败，可能与其他程序冲突", name);
+        MessageBox(hwnd, msg, L"警告", MB_OK | MB_ICONWARNING);
+    }
+}
+
 // 注册全局热键
 void RegisterHotKeys(HWND hwnd)
 {
-    // 注销所有现有热键
-    UnregisterHotKeys(hwnd);
-
-    // 根据开关状态注册热键
-    if (g_enableTransparencyUp) {
-        if (!RegisterHotKey(hwnd, ID_HOTKEY_TRANSPARENCY_UP, g_transparencyUpModifiers, g_transparencyUpKey)) {
-            MessageBox(hwnd, L"透明度增加热键注册失败，可能与其他程序冲突", L"警告", MB_OK | MB_ICONWARNING);
-        }
-    }
-    if (g_enableTransparencyDown) {
-        if (!RegisterHotKey(hwnd, ID_HOTKEY_TRANSPARENCY_DOWN, g_transparencyDownModifiers, g_transparencyDownKey)) {
-            MessageBox(hwnd, L"透明度减少热键注册失败，可能与其他程序冲突", L"警告", MB_OK | MB_ICONWARNING);
-        }
-    }
-    if (g_enableCenter) {
-        if (!RegisterHotKey(hwnd, ID_HOTKEY_CENTER_WINDOW, g_centerModifiers, g_centerKey)) {
-            MessageBox(hwnd, L"窗口居中热键注册失败，可能与其他程序冲突", L"警告", MB_OK | MB_ICONWARNING);
-        }
-    }
-    if (g_enableShake) {
-        if (!RegisterHotKey(hwnd, ID_HOTKEY_SHAKE_WINDOW, g_shakeModifiers, g_shakeKey)) {
-            MessageBox(hwnd, L"窗口抖动热键注册失败，可能与其他程序冲突", L"警告", MB_OK | MB_ICONWARNING);
-        }
-    }
-    if (g_enableRestore) {
-        if (!RegisterHotKey(hwnd, ID_HOTKEY_RESTORE_OPACITY, g_restoreModifiers, g_restoreKey)) {
-            MessageBox(hwnd, L"恢复透明度热键注册失败，可能与其他程序冲突", L"警告", MB_OK | MB_ICONWARNING);
-        }
-    }
+    RegisterOneHotkey(hwnd, ID_HOTKEY_TRANSPARENCY_UP, g_enableTransparencyUp,
+        g_transparencyUpModifiers, g_transparencyUpKey, MOD_ALT, VK_LEFT, L"透明度增加");
+    RegisterOneHotkey(hwnd, ID_HOTKEY_TRANSPARENCY_DOWN, g_enableTransparencyDown,
+        g_transparencyDownModifiers, g_transparencyDownKey, MOD_ALT, VK_RIGHT, L"透明度减少");
+    RegisterOneHotkey(hwnd, ID_HOTKEY_CENTER_WINDOW, g_enableCenter,
+        g_centerModifiers, g_centerKey, MOD_CONTROL, VK_NUMPAD5, L"窗口居中");
+    RegisterOneHotkey(hwnd, ID_HOTKEY_SHAKE_WINDOW, g_enableShake,
+        g_shakeModifiers, g_shakeKey, MOD_ALT, VK_DOWN, L"窗口抖动");
+    RegisterOneHotkey(hwnd, ID_HOTKEY_RESTORE_OPACITY, g_enableRestore,
+        g_restoreModifiers, g_restoreKey, MOD_ALT, VK_UP, L"恢复透明度");
 }
 
 // 注销全局热键
@@ -998,7 +998,7 @@ void UnregisterHotKeys(HWND hwnd)
 void AdjustWindowTransparency(BOOL increase)
 {
     HWND hwnd = GetTopMostWindow();
-    if (!hwnd || hwnd == g_hMainWnd || hwnd == g_hSettingsWnd) {
+    if (!hwnd || !IsWindow(hwnd) || hwnd == g_hMainWnd || hwnd == g_hSettingsWnd) {
         return;
     }
 
@@ -1065,7 +1065,7 @@ int GetWindowTransparency(HWND hwnd)
 void CenterWindow()
 {
     HWND hwnd = GetTopMostWindow();
-    if (!hwnd || hwnd == g_hMainWnd || hwnd == g_hSettingsWnd) {
+    if (!hwnd || !IsWindow(hwnd) || hwnd == g_hMainWnd || hwnd == g_hSettingsWnd) {
         return;
     }
 
@@ -1111,7 +1111,7 @@ void ShakeWindow()
 void RestoreWindowOpacity()
 {
     HWND hwnd = GetTopMostWindow();
-    if (!hwnd || hwnd == g_hMainWnd || hwnd == g_hSettingsWnd) {
+    if (!hwnd || !IsWindow(hwnd) || hwnd == g_hMainWnd || hwnd == g_hSettingsWnd) {
         return;
     }
 
