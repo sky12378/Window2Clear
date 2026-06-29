@@ -747,6 +747,10 @@ LRESULT CALLBACK SettingsProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam
                     g_shakeModifiers = modifiers;
                     g_shakeKey = (UINT)wParam;
                     break;
+                case 5: // 恢复不透明度
+                    g_restoreModifiers = modifiers;
+                    g_restoreKey = (UINT)wParam;
+                    break;
                 }
 
                 // 显示设置的热键
