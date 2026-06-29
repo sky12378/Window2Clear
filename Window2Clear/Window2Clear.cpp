@@ -106,6 +106,15 @@ typedef struct {
 TransparentWindow g_transparentWindows[MAX_TRANSPARENT_WINDOWS];
 int g_transparentCount = 0;
 
+// 窗口抖动状态
+#define SHAKE_TIMER_ID 3
+#define SHAKE_STEPS 6
+#define SHAKE_DISTANCE 5
+static HWND g_shakeHwnd = NULL;
+static int g_shakeOrigX = 0;
+static int g_shakeOrigY = 0;
+static int g_shakeStep = 0;
+
 // 热键监听状态
 BOOL g_isListeningHotkey = FALSE;     // 是否正在监听热键输入
 int g_currentListeningType = 0;       // 当前监听类型: 0=无, 1=透明度增加, 2=透明度减少, 3=居中, 4=抖动
@@ -264,6 +273,22 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
                 // else: 一切正常，什么都不做
             }
         }
+        if (wParam == SHAKE_TIMER_ID) {
+            if (g_shakeStep < SHAKE_STEPS) {
+                int dx = (g_shakeStep % 2 == 0) ? SHAKE_DISTANCE : -SHAKE_DISTANCE;
+                int dy = (g_shakeStep % 4 < 2) ? SHAKE_DISTANCE : -SHAKE_DISTANCE;
+                if (IsWindow(g_shakeHwnd)) {
+                    SetWindowPos(g_shakeHwnd, NULL, g_shakeOrigX + dx, g_shakeOrigY + dy, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
+                }
+                g_shakeStep++;
+            } else {
+                KillTimer(hwnd, SHAKE_TIMER_ID);
+                if (IsWindow(g_shakeHwnd)) {
+                    SetWindowPos(g_shakeHwnd, NULL, g_shakeOrigX, g_shakeOrigY, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
+                }
+                g_shakeHwnd = NULL;
+            }
+        }
         break;
 
     case WM_HOTKEY:
@@ -289,6 +314,8 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
     case WM_TRAYICON:
         if (lParam == WM_RBUTTONUP) {
             ShowContextMenu(hwnd);
+        } else if (lParam == WM_LBUTTONDBLCLK) {
+            ShowSettingsWindow();
         }
         break;
 
@@ -884,16 +911,18 @@ void ShowSettingsWindow()
         return;
     }
 
-    // 注册设置窗口类
+    // 注册设置窗口类（仅首次）
     WNDCLASS wc = { 0 };
-    wc.lpfnWndProc = SettingsProc;
-    wc.hInstance = GetModuleHandle(NULL);
-    wc.lpszClassName = L"SettingsWindowClass";
-    wc.hCursor = LoadCursor(NULL, IDC_ARROW);
-    wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
-    wc.hIcon = LoadIcon(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_WINDOW2CLEAR));
-
-    RegisterClass(&wc);
+    if (!GetClassInfo(GetModuleHandle(NULL), L"SettingsWindowClass", &wc)) {
+        ZeroMemory(&wc, sizeof(wc));
+        wc.lpfnWndProc = SettingsProc;
+        wc.hInstance = GetModuleHandle(NULL);
+        wc.lpszClassName = L"SettingsWindowClass";
+        wc.hCursor = LoadCursor(NULL, IDC_ARROW);
+        wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+        wc.hIcon = LoadIcon(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_WINDOW2CLEAR));
+        RegisterClass(&wc);
+    }
 
     // 计算窗口居中位置
     int windowWidth = 380;
@@ -994,8 +1023,8 @@ void AdjustWindowTransparency(BOOL increase)
 HWND GetTopMostWindow()
 {
     HWND hwnd = GetForegroundWindow();
-    if (!hwnd) {
-        hwnd = GetWindow(GetDesktopWindow(), GW_CHILD);
+    if (!hwnd || !IsWindow(hwnd)) {
+        return NULL;
     }
     return hwnd;
 }
@@ -1058,37 +1087,24 @@ void CenterWindow()
     SetWindowPos(hwnd, NULL, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
 }
 
-// 窗口抖动
+// 窗口抖动状态（在 ShakeWindow 中使用，定时器回调在 WindowProc 中）
+
 void ShakeWindow()
 {
     HWND hwnd = GetTopMostWindow();
-    if (!hwnd || hwnd == g_hMainWnd || hwnd == g_hSettingsWnd) {
+    if (!hwnd || hwnd == g_hMainWnd || hwnd == g_hSettingsWnd || !IsWindow(hwnd)) {
         return;
     }
+    // 如果正在抖动，忽略
+    if (g_shakeHwnd) return;
 
-    // 获取窗口当前位置
     RECT rect;
     GetWindowRect(hwnd, &rect);
-    int originalX = rect.left;
-    int originalY = rect.top;
-    int width = rect.right - rect.left;
-    int height = rect.bottom - rect.top;
-
-    // 抖动效果：快速移动窗口几次
-    const int shakeDistance = 5;
-    const int shakeTimes = 6;
-    const int shakeDelay = 50; // 毫秒
-
-    for (int i = 0; i < shakeTimes; i++) {
-        int offsetX = (i % 2 == 0) ? shakeDistance : -shakeDistance;
-        int offsetY = (i % 4 < 2) ? shakeDistance : -shakeDistance;
-
-        SetWindowPos(hwnd, NULL, originalX + offsetX, originalY + offsetY, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
-        Sleep(shakeDelay);
-    }
-
-    // 恢复到原始位置
-    SetWindowPos(hwnd, NULL, originalX, originalY, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
+    g_shakeHwnd = hwnd;
+    g_shakeOrigX = rect.left;
+    g_shakeOrigY = rect.top;
+    g_shakeStep = 0;
+    SetTimer(g_hMainWnd, SHAKE_TIMER_ID, 50, NULL);
 }
 
 // 恢复窗口不透明
