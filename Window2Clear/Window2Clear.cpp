@@ -332,6 +332,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 
     case WM_DESTROY:
         KillTimer(hwnd, 1);
+        KillTimer(hwnd, SHAKE_TIMER_ID);
         PostQuitMessage(0);
         break;
 
@@ -924,13 +925,17 @@ void ShowSettingsWindow()
         RegisterClass(&wc);
     }
 
-    // 计算窗口居中位置
+    // 计算窗口居中位置（基于当前鼠标所在显示器）
     int windowWidth = 380;
     int windowHeight = 520;
-    int screenWidth = GetSystemMetrics(SM_CXSCREEN);
-    int screenHeight = GetSystemMetrics(SM_CYSCREEN);
-    int x = (screenWidth - windowWidth) / 2;
-    int y = (screenHeight - windowHeight) / 2;
+    POINT cursorPos;
+    GetCursorPos(&cursorPos);
+    HMONITOR hMon = MonitorFromPoint(cursorPos, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO mi = { sizeof(mi) };
+    GetMonitorInfo(hMon, &mi);
+    RECT workArea = mi.rcWork;
+    int x = workArea.left + (workArea.right - workArea.left - windowWidth) / 2;
+    int y = workArea.top + (workArea.bottom - workArea.top - windowHeight) / 2;
 
     // 创建设置窗口
     wchar_t windowTitle[100];
@@ -1005,15 +1010,16 @@ void AdjustWindowTransparency(BOOL increase)
     int currentAlpha = GetWindowTransparency(hwnd);
     int newAlpha;
 
+    int delta = MulDiv(255, g_transparencyStep, 100);
+    if (delta < 1) delta = 1;
+
     if (increase) {
-        // 增加透明度（减少alpha值）
-        newAlpha = currentAlpha - (255 * g_transparencyStep / 100);
-        if (newAlpha < 25) newAlpha = 25; // 最小透明度限制
+        newAlpha = currentAlpha - delta;
+        if (newAlpha < 25) newAlpha = 25;
     }
     else {
-        // 减少透明度（增加alpha值）
-        newAlpha = currentAlpha + (255 * g_transparencyStep / 100);
-        if (newAlpha > 255) newAlpha = 255; // 完全不透明
+        newAlpha = currentAlpha + delta;
+        if (newAlpha > 255) newAlpha = 255;
     }
 
     SetWindowTransparency(hwnd, newAlpha);
@@ -1023,7 +1029,7 @@ void AdjustWindowTransparency(BOOL increase)
 HWND GetTopMostWindow()
 {
     HWND hwnd = GetForegroundWindow();
-    if (!hwnd || !IsWindow(hwnd)) {
+    if (!hwnd || !IsWindow(hwnd) || IsIconic(hwnd)) {
         return NULL;
     }
     return hwnd;
@@ -1069,21 +1075,20 @@ void CenterWindow()
         return;
     }
 
-    // 获取屏幕尺寸
-    int screenWidth = GetSystemMetrics(SM_CXSCREEN);
-    int screenHeight = GetSystemMetrics(SM_CYSCREEN);
+    // 获取窗口所在显示器的工作区（扣掉任务栏）
+    HMONITOR hMon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO mi = { sizeof(mi) };
+    GetMonitorInfo(hMon, &mi);
+    RECT workArea = mi.rcWork;
 
-    // 获取窗口尺寸
     RECT rect;
     GetWindowRect(hwnd, &rect);
     int windowWidth = rect.right - rect.left;
     int windowHeight = rect.bottom - rect.top;
 
-    // 计算居中位置
-    int x = (screenWidth - windowWidth) / 2;
-    int y = (screenHeight - windowHeight) / 2;
+    int x = workArea.left + (workArea.right - workArea.left - windowWidth) / 2;
+    int y = workArea.top + (workArea.bottom - workArea.top - windowHeight) / 2;
 
-    // 移动窗口到居中位置
     SetWindowPos(hwnd, NULL, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
 }
 
@@ -1157,22 +1162,41 @@ void UntrackTransparentWindow(HWND hwnd)
     g_transparentCount--;
 }
 
+// 校验热键修饰键（只能是 MOD_ALT/MOD_CONTROL/MOD_SHIFT/MOD_WIN 的组合）
+static UINT ValidateModifiers(UINT mods, UINT def)
+{
+    UINT valid = 0;
+    if (mods & MOD_ALT) valid |= MOD_ALT;
+    if (mods & MOD_CONTROL) valid |= MOD_CONTROL;
+    if (mods & MOD_SHIFT) valid |= MOD_SHIFT;
+    if (mods & MOD_WIN) valid |= MOD_WIN;
+    return valid ? valid : def;
+}
+
+// 校验虚拟键码（1-255 范围内）
+static UINT ValidateVKey(UINT vk, UINT def)
+{
+    return (vk >= 1 && vk <= 255) ? vk : def;
+}
+
 // 加载配置
 void LoadConfig()
 {
     g_transparencyStep = GetPrivateProfileInt(L"Settings", L"TransparencyStep", 10, g_configFile);
+    if (g_transparencyStep < 1) g_transparencyStep = 1;
+    if (g_transparencyStep > 50) g_transparencyStep = 50;
 
-    // 加载热键配置
-    g_transparencyUpModifiers = GetPrivateProfileInt(L"Hotkeys", L"TransparencyUpModifiers", MOD_ALT, g_configFile);
-    g_transparencyUpKey = GetPrivateProfileInt(L"Hotkeys", L"TransparencyUpKey", VK_LEFT, g_configFile);
-    g_transparencyDownModifiers = GetPrivateProfileInt(L"Hotkeys", L"TransparencyDownModifiers", MOD_ALT, g_configFile);
-    g_transparencyDownKey = GetPrivateProfileInt(L"Hotkeys", L"TransparencyDownKey", VK_RIGHT, g_configFile);
-    g_centerModifiers = GetPrivateProfileInt(L"Hotkeys", L"CenterModifiers", MOD_CONTROL, g_configFile);
-    g_centerKey = GetPrivateProfileInt(L"Hotkeys", L"CenterKey", VK_NUMPAD5, g_configFile);
-    g_shakeModifiers = GetPrivateProfileInt(L"Hotkeys", L"ShakeModifiers", MOD_ALT, g_configFile);
-    g_shakeKey = GetPrivateProfileInt(L"Hotkeys", L"ShakeKey", VK_DOWN, g_configFile);
-    g_restoreModifiers = GetPrivateProfileInt(L"Hotkeys", L"RestoreModifiers", MOD_ALT, g_configFile);
-    g_restoreKey = GetPrivateProfileInt(L"Hotkeys", L"RestoreKey", VK_UP, g_configFile);
+    // 加载并校验热键配置
+    g_transparencyUpModifiers = ValidateModifiers(GetPrivateProfileInt(L"Hotkeys", L"TransparencyUpModifiers", MOD_ALT, g_configFile), MOD_ALT);
+    g_transparencyUpKey = ValidateVKey(GetPrivateProfileInt(L"Hotkeys", L"TransparencyUpKey", VK_LEFT, g_configFile), VK_LEFT);
+    g_transparencyDownModifiers = ValidateModifiers(GetPrivateProfileInt(L"Hotkeys", L"TransparencyDownModifiers", MOD_ALT, g_configFile), MOD_ALT);
+    g_transparencyDownKey = ValidateVKey(GetPrivateProfileInt(L"Hotkeys", L"TransparencyDownKey", VK_RIGHT, g_configFile), VK_RIGHT);
+    g_centerModifiers = ValidateModifiers(GetPrivateProfileInt(L"Hotkeys", L"CenterModifiers", MOD_CONTROL, g_configFile), MOD_CONTROL);
+    g_centerKey = ValidateVKey(GetPrivateProfileInt(L"Hotkeys", L"CenterKey", VK_NUMPAD5, g_configFile), VK_NUMPAD5);
+    g_shakeModifiers = ValidateModifiers(GetPrivateProfileInt(L"Hotkeys", L"ShakeModifiers", MOD_ALT, g_configFile), MOD_ALT);
+    g_shakeKey = ValidateVKey(GetPrivateProfileInt(L"Hotkeys", L"ShakeKey", VK_DOWN, g_configFile), VK_DOWN);
+    g_restoreModifiers = ValidateModifiers(GetPrivateProfileInt(L"Hotkeys", L"RestoreModifiers", MOD_ALT, g_configFile), MOD_ALT);
+    g_restoreKey = ValidateVKey(GetPrivateProfileInt(L"Hotkeys", L"RestoreKey", VK_UP, g_configFile), VK_UP);
 
     // 加载热键开关状态
     g_enableTransparencyUp = GetPrivateProfileInt(L"Switches", L"EnableTransparencyUp", 1, g_configFile);
