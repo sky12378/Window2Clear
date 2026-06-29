@@ -4,7 +4,7 @@
 
 调用 Windows API 实现，超小体积，仅 28KB，无需安装，打开即用。
 
-包含 **C 版本**和 **Rust 版本**两个实现。
+本项目基于 [iwill123/Window2Clear](https://github.com/iwill123/Window2Clear) 开源代码修改，新增透明度持久化守护、恢复热键及 Rust 复刻版。
 
 ## 下载与安装
 
@@ -140,3 +140,10 @@ Window2Clear/
 ## 许可证
 
 开源项目，欢迎贡献代码和反馈问题。
+
+## 致谢
+
+本项目基于 [iwill123/Window2Clear](https://github.com/iwill123/Window2Clear) 开源代码修改。
+
+- 原项目作者: [iwill123](https://github.com/iwill123)
+- 本修改版作者: [sky12378](https://github.com/sky12378)
