@@ -143,8 +143,8 @@ void SaveConfig();                                // 保存设置到配置文件
 HWND GetTopMostWindow();                          // 获取最上层窗口
 void SetWindowTransparency(HWND hwnd, int alpha); // 设置窗口透明度
 int GetWindowTransparency(HWND hwnd);             // 获取窗口透明度
-wchar_t* GetModifierName(UINT modifiers);         // 获取修饰键名称
-wchar_t* GetKeyName(UINT vkCode);                 // 获取按键名称
+void GetModifierName(UINT modifiers, wchar_t* buf, size_t bufSize);         // 获取修饰键名称
+void GetKeyName(UINT vkCode, wchar_t* buf, size_t bufSize);                 // 获取按键名称
 
 // 主函数
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow)
@@ -359,6 +359,8 @@ LRESULT CALLBACK SettingsProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 
         int yPos = 20;
 
+        wchar_t _modBuf[64], _keyBuf[32];  // reused for hotkey display
+
         // 透明度功能区
         CreateWindow(L"STATIC", L"透明度控制:",
             WS_VISIBLE | WS_CHILD,
@@ -385,7 +387,9 @@ LRESULT CALLBACK SettingsProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam
             hwnd, (HMENU)IDC_TRANSPARENCY_UP_DISPLAY, GetModuleHandle(NULL), NULL);
         // 设置当前热键显示
         wchar_t keyText[256];
-        swprintf(keyText, 256, L"%s+%s", GetModifierName(g_transparencyUpModifiers), GetKeyName(g_transparencyUpKey));
+        GetModifierName(g_transparencyUpModifiers, _modBuf, 64);
+        GetKeyName(g_transparencyUpKey, _keyBuf, 32);
+        swprintf(keyText, 256, L"%s+%s", _modBuf, _keyBuf);
         SetWindowText(hTransparencyUpDisplay, keyText);
 
         hTransparencyUpButton = CreateWindow(L"BUTTON", L"设置",
@@ -406,7 +410,9 @@ LRESULT CALLBACK SettingsProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam
             120, yPos, 140, 20,
             hwnd, (HMENU)IDC_TRANSPARENCY_DOWN_DISPLAY, GetModuleHandle(NULL), NULL);
         // 设置当前热键显示
-        swprintf(keyText, 256, L"%s+%s", GetModifierName(g_transparencyDownModifiers), GetKeyName(g_transparencyDownKey));
+        GetModifierName(g_transparencyDownModifiers, _modBuf, 64);
+        GetKeyName(g_transparencyDownKey, _keyBuf, 32);
+        swprintf(keyText, 256, L"%s+%s", _modBuf, _keyBuf);
         SetWindowText(hTransparencyDownDisplay, keyText);
 
         hTransparencyDownButton = CreateWindow(L"BUTTON", L"设置",
@@ -435,7 +441,9 @@ LRESULT CALLBACK SettingsProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam
             30, yPos, 140, 20,
             hwnd, (HMENU)IDC_CENTER_DISPLAY, GetModuleHandle(NULL), NULL);
         // 设置当前热键显示
-        swprintf(keyText, 256, L"%s+%s", GetModifierName(g_centerModifiers), GetKeyName(g_centerKey));
+        GetModifierName(g_centerModifiers, _modBuf, 64);
+        GetKeyName(g_centerKey, _keyBuf, 32);
+        swprintf(keyText, 256, L"%s+%s", _modBuf, _keyBuf);
         SetWindowText(hCenterDisplay, keyText);
 
         hCenterButton = CreateWindow(L"BUTTON", L"设置",
@@ -464,7 +472,9 @@ LRESULT CALLBACK SettingsProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam
             30, yPos, 140, 20,
             hwnd, (HMENU)IDC_SHAKE_DISPLAY, GetModuleHandle(NULL), NULL);
         // 设置当前热键显示
-        swprintf(keyText, 256, L"%s+%s", GetModifierName(g_shakeModifiers), GetKeyName(g_shakeKey));
+        GetModifierName(g_shakeModifiers, _modBuf, 64);
+        GetKeyName(g_shakeKey, _keyBuf, 32);
+        swprintf(keyText, 256, L"%s+%s", _modBuf, _keyBuf);
         SetWindowText(hShakeDisplay, keyText);
 
         hShakeButton = CreateWindow(L"BUTTON", L"设置",
@@ -493,7 +503,9 @@ LRESULT CALLBACK SettingsProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam
             30, yPos, 140, 20,
             hwnd, (HMENU)IDC_RESTORE_DISPLAY, GetModuleHandle(NULL), NULL);
         // 设置当前热键显示
-        swprintf(keyText, 256, L"%s+%s", GetModifierName(g_restoreModifiers), GetKeyName(g_restoreKey));
+        GetModifierName(g_restoreModifiers, _modBuf, 64);
+        GetKeyName(g_restoreKey, _keyBuf, 32);
+        swprintf(keyText, 256, L"%s+%s", _modBuf, _keyBuf);
         SetWindowText(hRestoreDisplay, keyText);
 
         hRestoreButton = CreateWindow(L"BUTTON", L"设置",
@@ -556,7 +568,10 @@ LRESULT CALLBACK SettingsProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam
                 SetWindowText(hTransparencyUpButton, L"设置");
                 // 恢复原来的热键显示
                 wchar_t keyText[256];
-                swprintf(keyText, 256, L"%s+%s", GetModifierName(g_transparencyUpModifiers), GetKeyName(g_transparencyUpKey));
+                wchar_t _modBuf[64], _keyBuf[32];
+                GetModifierName(g_transparencyUpModifiers, _modBuf, 64);
+                GetKeyName(g_transparencyUpKey, _keyBuf, 32);
+                swprintf(keyText, 256, L"%s+%s", _modBuf, _keyBuf);
                 SetWindowText(hTransparencyUpDisplay, keyText);
                 ReleaseCapture();
             }
@@ -581,7 +596,10 @@ LRESULT CALLBACK SettingsProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam
                 SetWindowText(hTransparencyDownButton, L"设置");
                 // 恢复原来的热键显示
                 wchar_t keyText[256];
-                swprintf(keyText, 256, L"%s+%s", GetModifierName(g_transparencyDownModifiers), GetKeyName(g_transparencyDownKey));
+                wchar_t _modBuf[64], _keyBuf[32];
+                GetModifierName(g_transparencyDownModifiers, _modBuf, 64);
+                GetKeyName(g_transparencyDownKey, _keyBuf, 32);
+                swprintf(keyText, 256, L"%s+%s", _modBuf, _keyBuf);
                 SetWindowText(hTransparencyDownDisplay, keyText);
                 ReleaseCapture();
             }
@@ -606,7 +624,10 @@ LRESULT CALLBACK SettingsProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam
                 SetWindowText(hCenterButton, L"设置");
                 // 恢复原来的热键显示
                 wchar_t keyText[256];
-                swprintf(keyText, 256, L"%s+%s", GetModifierName(g_centerModifiers), GetKeyName(g_centerKey));
+                wchar_t _modBuf[64], _keyBuf[32];
+                GetModifierName(g_centerModifiers, _modBuf, 64);
+                GetKeyName(g_centerKey, _keyBuf, 32);
+                swprintf(keyText, 256, L"%s+%s", _modBuf, _keyBuf);
                 SetWindowText(hCenterDisplay, keyText);
                 ReleaseCapture();
             }
@@ -631,7 +652,10 @@ LRESULT CALLBACK SettingsProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam
                 SetWindowText(hShakeButton, L"设置");
                 // 恢复原来的热键显示
                 wchar_t keyText[256];
-                swprintf(keyText, 256, L"%s+%s", GetModifierName(g_shakeModifiers), GetKeyName(g_shakeKey));
+                wchar_t _modBuf[64], _keyBuf[32];
+                GetModifierName(g_shakeModifiers, _modBuf, 64);
+                GetKeyName(g_shakeKey, _keyBuf, 32);
+                swprintf(keyText, 256, L"%s+%s", _modBuf, _keyBuf);
                 SetWindowText(hShakeDisplay, keyText);
                 ReleaseCapture();
             }
@@ -655,7 +679,10 @@ LRESULT CALLBACK SettingsProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam
                 g_currentListeningType = 0;
                 SetWindowText(hRestoreButton, L"设置");
                 wchar_t keyText[256];
-                swprintf(keyText, 256, L"%s+%s", GetModifierName(g_restoreModifiers), GetKeyName(g_restoreKey));
+                wchar_t _modBuf[64], _keyBuf[32];
+                GetModifierName(g_restoreModifiers, _modBuf, 64);
+                GetKeyName(g_restoreKey, _keyBuf, 32);
+                swprintf(keyText, 256, L"%s+%s", _modBuf, _keyBuf);
                 SetWindowText(hRestoreDisplay, keyText);
                 ReleaseCapture();
             }
@@ -668,6 +695,7 @@ LRESULT CALLBACK SettingsProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam
                 SetWindowText(hRestoreButton, L"取消");
                 SetWindowText(hRestoreDisplay, L"请按下组合键...");
                 SetFocus(hwnd);
+                SetCapture(hwnd);
             }
             break;
         }
@@ -1145,7 +1173,11 @@ void TrackTransparentWindow(HWND hwnd, int alpha)
         g_transparentWindows[idx].alpha = alpha;
         return;
     }
-    if (g_transparentCount >= MAX_TRANSPARENT_WINDOWS) return;
+    if (g_transparentCount >= MAX_TRANSPARENT_WINDOWS) {
+        MessageBox(NULL, L"透明窗口数量已达上限（64个），无法继续跟踪新窗口。\n请先恢复部分窗口的透明度。",
+            L"Window2Clear 提示", MB_OK | MB_ICONWARNING);
+        return;
+    }
     g_transparentWindows[g_transparentCount].hwnd = hwnd;
     g_transparentWindows[g_transparentCount].alpha = alpha;
     g_transparentCount++;
@@ -1255,163 +1287,160 @@ void SaveConfig()
 }
 
 // 获取修饰键名称
-wchar_t* GetModifierName(UINT modifiers)
+void GetModifierName(UINT modifiers, wchar_t* buf, size_t bufSize)
 {
-    static wchar_t modifierText[64];
-    modifierText[0] = L'\0';
+    buf[0] = L'\0';
 
     if (modifiers & MOD_CONTROL) {
-        wcscat_s(modifierText, 64, L"CTRL");
+        wcscat_s(buf, bufSize, L"CTRL");
     }
     if (modifiers & MOD_ALT) {
-        if (wcslen(modifierText) > 0) wcscat_s(modifierText, 64, L"+");
-        wcscat_s(modifierText, 64, L"ALT");
+        if (wcslen(buf) > 0) wcscat_s(buf, bufSize, L"+");
+        wcscat_s(buf, bufSize, L"ALT");
     }
     if (modifiers & MOD_SHIFT) {
-        if (wcslen(modifierText) > 0) wcscat_s(modifierText, 64, L"+");
-        wcscat_s(modifierText, 64, L"SHIFT");
+        if (wcslen(buf) > 0) wcscat_s(buf, bufSize, L"+");
+        wcscat_s(buf, bufSize, L"SHIFT");
     }
     if (modifiers & MOD_WIN) {
-        if (wcslen(modifierText) > 0) wcscat_s(modifierText, 64, L"+");
-        wcscat_s(modifierText, 64, L"WIN");
+        if (wcslen(buf) > 0) wcscat_s(buf, bufSize, L"+");
+        wcscat_s(buf, bufSize, L"WIN");
     }
 
-    return modifierText;
+    return;
 }
 
 // 获取按键名称
-wchar_t* GetKeyName(UINT vkCode)
-{
-    static wchar_t keyText[32];
+void GetKeyName(UINT vkCode, wchar_t* buf, size_t bufSize){
 
     switch (vkCode) {
         // 功能键
     case VK_F1:
-        wcscpy_s(keyText, 32, L"F1");
-        return keyText;
+        wcscpy_s(buf, bufSize, L"F1");
+        return;
     case VK_F2:
-        wcscpy_s(keyText, 32, L"F2");
-        return keyText;
+        wcscpy_s(buf, bufSize, L"F2");
+        return;
     case VK_F3:
-        wcscpy_s(keyText, 32, L"F3");
-        return keyText;
+        wcscpy_s(buf, bufSize, L"F3");
+        return;
     case VK_F4:
-        wcscpy_s(keyText, 32, L"F4");
-        return keyText;
+        wcscpy_s(buf, bufSize, L"F4");
+        return;
     case VK_F5:
-        wcscpy_s(keyText, 32, L"F5");
-        return keyText;
+        wcscpy_s(buf, bufSize, L"F5");
+        return;
     case VK_F6:
-        wcscpy_s(keyText, 32, L"F6");
-        return keyText;
+        wcscpy_s(buf, bufSize, L"F6");
+        return;
     case VK_F7:
-        wcscpy_s(keyText, 32, L"F7");
-        return keyText;
+        wcscpy_s(buf, bufSize, L"F7");
+        return;
     case VK_F8:
-        wcscpy_s(keyText, 32, L"F8");
-        return keyText;
+        wcscpy_s(buf, bufSize, L"F8");
+        return;
     case VK_F9:
-        wcscpy_s(keyText, 32, L"F9");
-        return keyText;
+        wcscpy_s(buf, bufSize, L"F9");
+        return;
     case VK_F10:
-        wcscpy_s(keyText, 32, L"F10");
-        return keyText;
+        wcscpy_s(buf, bufSize, L"F10");
+        return;
     case VK_F11:
-        wcscpy_s(keyText, 32, L"F11");
-        return keyText;
+        wcscpy_s(buf, bufSize, L"F11");
+        return;
     case VK_F12:
-        wcscpy_s(keyText, 32, L"F12");
-        return keyText;
+        wcscpy_s(buf, bufSize, L"F12");
+        return;
 
         // 方向键
     case VK_LEFT:
-        wcscpy_s(keyText, 32, L"LEFT");
-        return keyText;
+        wcscpy_s(buf, bufSize, L"LEFT");
+        return;
     case VK_RIGHT:
-        wcscpy_s(keyText, 32, L"RIGHT");
-        return keyText;
+        wcscpy_s(buf, bufSize, L"RIGHT");
+        return;
     case VK_UP:
-        wcscpy_s(keyText, 32, L"UP");
-        return keyText;
+        wcscpy_s(buf, bufSize, L"UP");
+        return;
     case VK_DOWN:
-        wcscpy_s(keyText, 32, L"DOWN");
-        return keyText;
+        wcscpy_s(buf, bufSize, L"DOWN");
+        return;
 
         // 数字键盘
     case VK_NUMPAD0:
-        wcscpy_s(keyText, 32, L"NUM0");
-        return keyText;
+        wcscpy_s(buf, bufSize, L"NUM0");
+        return;
     case VK_NUMPAD1:
-        wcscpy_s(keyText, 32, L"NUM1");
-        return keyText;
+        wcscpy_s(buf, bufSize, L"NUM1");
+        return;
     case VK_NUMPAD2:
-        wcscpy_s(keyText, 32, L"NUM2");
-        return keyText;
+        wcscpy_s(buf, bufSize, L"NUM2");
+        return;
     case VK_NUMPAD3:
-        wcscpy_s(keyText, 32, L"NUM3");
-        return keyText;
+        wcscpy_s(buf, bufSize, L"NUM3");
+        return;
     case VK_NUMPAD4:
-        wcscpy_s(keyText, 32, L"NUM4");
-        return keyText;
+        wcscpy_s(buf, bufSize, L"NUM4");
+        return;
     case VK_NUMPAD5:
-        wcscpy_s(keyText, 32, L"NUM5");
-        return keyText;
+        wcscpy_s(buf, bufSize, L"NUM5");
+        return;
     case VK_NUMPAD6:
-        wcscpy_s(keyText, 32, L"NUM6");
-        return keyText;
+        wcscpy_s(buf, bufSize, L"NUM6");
+        return;
     case VK_NUMPAD7:
-        wcscpy_s(keyText, 32, L"NUM7");
-        return keyText;
+        wcscpy_s(buf, bufSize, L"NUM7");
+        return;
     case VK_NUMPAD8:
-        wcscpy_s(keyText, 32, L"NUM8");
-        return keyText;
+        wcscpy_s(buf, bufSize, L"NUM8");
+        return;
     case VK_NUMPAD9:
-        wcscpy_s(keyText, 32, L"NUM9");
-        return keyText;
+        wcscpy_s(buf, bufSize, L"NUM9");
+        return;
 
         // 特殊键
     case VK_INSERT:
-        wcscpy_s(keyText, 32, L"INSERT");
-        return keyText;
+        wcscpy_s(buf, bufSize, L"INSERT");
+        return;
     case VK_DELETE:
-        wcscpy_s(keyText, 32, L"DELETE");
-        return keyText;
+        wcscpy_s(buf, bufSize, L"DELETE");
+        return;
     case VK_HOME:
-        wcscpy_s(keyText, 32, L"HOME");
-        return keyText;
+        wcscpy_s(buf, bufSize, L"HOME");
+        return;
     case VK_END:
-        wcscpy_s(keyText, 32, L"END");
-        return keyText;
+        wcscpy_s(buf, bufSize, L"END");
+        return;
     case VK_PRIOR:
-        wcscpy_s(keyText, 32, L"PAGEUP");
-        return keyText;
+        wcscpy_s(buf, bufSize, L"PAGEUP");
+        return;
     case VK_NEXT:
-        wcscpy_s(keyText, 32, L"PAGEDOWN");
-        return keyText;
+        wcscpy_s(buf, bufSize, L"PAGEDOWN");
+        return;
     case VK_SPACE:
-        wcscpy_s(keyText, 32, L"SPACE");
-        return keyText;
+        wcscpy_s(buf, bufSize, L"SPACE");
+        return;
     case VK_TAB:
-        wcscpy_s(keyText, 32, L"TAB");
-        return keyText;
+        wcscpy_s(buf, bufSize, L"TAB");
+        return;
     case VK_RETURN:
-        wcscpy_s(keyText, 32, L"ENTER");
-        return keyText;
+        wcscpy_s(buf, bufSize, L"ENTER");
+        return;
     case VK_ESCAPE:
-        wcscpy_s(keyText, 32, L"ESC");
-        return keyText;
+        wcscpy_s(buf, bufSize, L"ESC");
+        return;
 
         // 字母和数字键
     default:
         if (vkCode >= 'A' && vkCode <= 'Z') {
-            swprintf_s(keyText, 32, L"%c", (wchar_t)vkCode);
-            return keyText;
+            swprintf_s(buf, bufSize, L"%c", (wchar_t)vkCode);
+            return;
         }
         if (vkCode >= '0' && vkCode <= '9') {
-            swprintf_s(keyText, 32, L"%c", (wchar_t)vkCode);
-            return keyText;
+            swprintf_s(buf, bufSize, L"%c", (wchar_t)vkCode);
+            return;
         }
-        swprintf_s(keyText, 32, L"KEY%d", vkCode);
-        return keyText;
+        swprintf_s(buf, bufSize, L"KEY%d", vkCode);
+        return;
     }
 }
