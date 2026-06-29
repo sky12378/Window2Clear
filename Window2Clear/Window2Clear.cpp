@@ -13,7 +13,7 @@
 // 调试日志（生产环境关闭）
 //#define ENABLE_DEBUG_LOG
 #ifdef ENABLE_DEBUG_LOG
-#define DEBUG_LOG_FILE L"Z:\\Window2Clear\\debug.log"
+#define DEBUG_LOG_FILE L".\\debug.log"
 void DebugLog(const wchar_t* fmt, ...) {
     va_list args;
     va_start(args, fmt);
@@ -42,9 +42,10 @@ void DebugLog(const wchar_t* fmt, ...) {
 #define ID_HOTKEY_CENTER_WINDOW 3
 #define ID_HOTKEY_SHAKE_WINDOW 4
 #define ID_HOTKEY_RESTORE_OPACITY 5
-#define CONFIG_FILE L".\\config.ini"
 #define MAX_PATH_LEN 260
-#define APP_VERSION L"v0.2.0"
+#define APP_VERSION L"v0.3.0"
+// 配置文件路径，在 WinMain 中基于 exe 目录动态生成
+wchar_t g_configFile[MAX_PATH_LEN] = L".\\config.ini";
 
 // 控件ID
 #define IDC_TRANSPARENCY_UP_BUTTON 2001
@@ -61,6 +62,9 @@ void DebugLog(const wchar_t* fmt, ...) {
 #define IDC_TRANSPARENCY_ENABLE 2012
 #define IDC_CENTER_ENABLE 2013
 #define IDC_SHAKE_ENABLE 2014
+#define IDC_RESTORE_DISPLAY 2015
+#define IDC_RESTORE_BUTTON 2016
+#define IDC_RESTORE_ENABLE 2017
 
 // 全局变量
 HWND g_hMainWnd = NULL;           // 主窗口句柄
@@ -158,6 +162,18 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     if (!RegisterClass(&wc)) {
         MessageBox(NULL, L"注册窗口类失败！", L"错误", MB_OK | MB_ICONERROR);
         return 1;
+    }
+
+    // 初始化配置文件路径（基于 exe 所在目录）
+    {
+        wchar_t exePath[MAX_PATH_LEN];
+        GetModuleFileNameW(NULL, exePath, MAX_PATH_LEN);
+        // 去掉文件名，保留目录
+        wchar_t* lastSlash = wcsrchr(exePath, L'\\');
+        if (lastSlash) {
+            *(lastSlash + 1) = L'\0';
+            swprintf_s(g_configFile, MAX_PATH_LEN, L"%sconfig.ini", exePath);
+        }
     }
 
     // 加载配置
@@ -304,7 +320,8 @@ LRESULT CALLBACK SettingsProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam
     static HWND hTransparencySlider, hSaveButton, hTransparencyLabel;
     static HWND hTransparencyUpDisplay, hTransparencyDownDisplay, hCenterDisplay, hShakeDisplay;
     static HWND hTransparencyUpButton, hTransparencyDownButton, hCenterButton, hShakeButton;
-    static HWND hTransparencyEnable, hCenterEnable, hShakeEnable;
+    static HWND hTransparencyEnable, hCenterEnable, hShakeEnable, hRestoreEnable;
+    static HWND hRestoreDisplay, hRestoreButton;
 
     switch (uMsg) {
     case WM_CREATE:
@@ -426,6 +443,35 @@ LRESULT CALLBACK SettingsProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam
             WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
             180, yPos, 50, 20,
             hwnd, (HMENU)IDC_SHAKE_BUTTON, GetModuleHandle(NULL), NULL);
+
+        yPos += 40;
+
+        // 恢复不透明度功能区
+        CreateWindow(L"STATIC", L"恢复不透明:",
+            WS_VISIBLE | WS_CHILD,
+            20, yPos, 80, 20,
+            hwnd, NULL, GetModuleHandle(NULL), NULL);
+
+        hRestoreEnable = CreateWindow(L"BUTTON", L"启用",
+            WS_VISIBLE | WS_CHILD | BS_AUTOCHECKBOX,
+            150, yPos, 60, 20,
+            hwnd, (HMENU)IDC_RESTORE_ENABLE, GetModuleHandle(NULL), NULL);
+        SendMessage(hRestoreEnable, BM_SETCHECK, g_enableRestore ? BST_CHECKED : BST_UNCHECKED, 0);
+
+        yPos += 30;
+
+        hRestoreDisplay = CreateWindow(L"EDIT", L"",
+            WS_VISIBLE | WS_CHILD | WS_BORDER | ES_AUTOHSCROLL | ES_READONLY,
+            30, yPos, 140, 20,
+            hwnd, (HMENU)IDC_RESTORE_DISPLAY, GetModuleHandle(NULL), NULL);
+        // 设置当前热键显示
+        swprintf(keyText, 256, L"%s+%s", GetModifierName(g_restoreModifiers), GetKeyName(g_restoreKey));
+        SetWindowText(hRestoreDisplay, keyText);
+
+        hRestoreButton = CreateWindow(L"BUTTON", L"设置",
+            WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
+            180, yPos, 50, 20,
+            hwnd, (HMENU)IDC_RESTORE_BUTTON, GetModuleHandle(NULL), NULL);
 
         yPos += 40;
 
@@ -574,6 +620,32 @@ LRESULT CALLBACK SettingsProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam
             }
             break;
         }
+        case IDC_RESTORE_BUTTON:
+        {
+            if (g_isListeningHotkey && g_currentListeningType == 5) {
+                g_isListeningHotkey = FALSE;
+                g_currentListeningType = 0;
+                SetWindowText(hRestoreButton, L"设置");
+                wchar_t keyText[256];
+                swprintf(keyText, 256, L"%s+%s", GetModifierName(g_restoreModifiers), GetKeyName(g_restoreKey));
+                SetWindowText(hRestoreDisplay, keyText);
+                ReleaseCapture();
+            }
+            else {
+                g_isListeningHotkey = TRUE;
+                g_currentListeningType = 5;
+                g_hCurrentButton = hRestoreButton;
+                g_hCurrentDisplay = hRestoreDisplay;
+                g_listeningStartTime = GetTickCount();
+                SetWindowText(hRestoreButton, L"取消");
+                SetWindowText(hRestoreDisplay, L"请按下组合键...");
+                SetFocus(hwnd);
+            }
+            break;
+        }
+        case IDC_RESTORE_ENABLE:
+            g_enableRestore = (SendMessage(hRestoreEnable, BM_GETCHECK, 0, 0) == BST_CHECKED);
+            break;
         case IDC_TRANSPARENCY_ENABLE:
         {
             BOOL transparencyEnabled = (SendMessage(hTransparencyEnable, BM_GETCHECK, 0, 0) == BST_CHECKED);
@@ -821,7 +893,7 @@ void ShowSettingsWindow()
 
     // 计算窗口居中位置
     int windowWidth = 380;
-    int windowHeight = 420;
+    int windowHeight = 520;
     int screenWidth = GetSystemMetrics(SM_CXSCREEN);
     int screenHeight = GetSystemMetrics(SM_CYSCREEN);
     int x = (screenWidth - windowWidth) / 2;
@@ -1068,26 +1140,26 @@ void UntrackTransparentWindow(HWND hwnd)
 // 加载配置
 void LoadConfig()
 {
-    g_transparencyStep = GetPrivateProfileInt(L"Settings", L"TransparencyStep", 10, CONFIG_FILE);
+    g_transparencyStep = GetPrivateProfileInt(L"Settings", L"TransparencyStep", 10, g_configFile);
 
     // 加载热键配置
-    g_transparencyUpModifiers = GetPrivateProfileInt(L"Hotkeys", L"TransparencyUpModifiers", MOD_ALT, CONFIG_FILE);
-    g_transparencyUpKey = GetPrivateProfileInt(L"Hotkeys", L"TransparencyUpKey", VK_LEFT, CONFIG_FILE);
-    g_transparencyDownModifiers = GetPrivateProfileInt(L"Hotkeys", L"TransparencyDownModifiers", MOD_ALT, CONFIG_FILE);
-    g_transparencyDownKey = GetPrivateProfileInt(L"Hotkeys", L"TransparencyDownKey", VK_RIGHT, CONFIG_FILE);
-    g_centerModifiers = GetPrivateProfileInt(L"Hotkeys", L"CenterModifiers", MOD_CONTROL, CONFIG_FILE);
-    g_centerKey = GetPrivateProfileInt(L"Hotkeys", L"CenterKey", VK_NUMPAD5, CONFIG_FILE);
-    g_shakeModifiers = GetPrivateProfileInt(L"Hotkeys", L"ShakeModifiers", MOD_ALT, CONFIG_FILE);
-    g_shakeKey = GetPrivateProfileInt(L"Hotkeys", L"ShakeKey", VK_DOWN, CONFIG_FILE);
-    g_restoreModifiers = GetPrivateProfileInt(L"Hotkeys", L"RestoreModifiers", MOD_ALT, CONFIG_FILE);
-    g_restoreKey = GetPrivateProfileInt(L"Hotkeys", L"RestoreKey", VK_UP, CONFIG_FILE);
+    g_transparencyUpModifiers = GetPrivateProfileInt(L"Hotkeys", L"TransparencyUpModifiers", MOD_ALT, g_configFile);
+    g_transparencyUpKey = GetPrivateProfileInt(L"Hotkeys", L"TransparencyUpKey", VK_LEFT, g_configFile);
+    g_transparencyDownModifiers = GetPrivateProfileInt(L"Hotkeys", L"TransparencyDownModifiers", MOD_ALT, g_configFile);
+    g_transparencyDownKey = GetPrivateProfileInt(L"Hotkeys", L"TransparencyDownKey", VK_RIGHT, g_configFile);
+    g_centerModifiers = GetPrivateProfileInt(L"Hotkeys", L"CenterModifiers", MOD_CONTROL, g_configFile);
+    g_centerKey = GetPrivateProfileInt(L"Hotkeys", L"CenterKey", VK_NUMPAD5, g_configFile);
+    g_shakeModifiers = GetPrivateProfileInt(L"Hotkeys", L"ShakeModifiers", MOD_ALT, g_configFile);
+    g_shakeKey = GetPrivateProfileInt(L"Hotkeys", L"ShakeKey", VK_DOWN, g_configFile);
+    g_restoreModifiers = GetPrivateProfileInt(L"Hotkeys", L"RestoreModifiers", MOD_ALT, g_configFile);
+    g_restoreKey = GetPrivateProfileInt(L"Hotkeys", L"RestoreKey", VK_UP, g_configFile);
 
     // 加载热键开关状态
-    g_enableTransparencyUp = GetPrivateProfileInt(L"Switches", L"EnableTransparencyUp", 1, CONFIG_FILE);
-    g_enableTransparencyDown = GetPrivateProfileInt(L"Switches", L"EnableTransparencyDown", 1, CONFIG_FILE);
-    g_enableCenter = GetPrivateProfileInt(L"Switches", L"EnableCenter", 0, CONFIG_FILE);
-    g_enableShake = GetPrivateProfileInt(L"Switches", L"EnableShake", 0, CONFIG_FILE);
-    g_enableRestore = GetPrivateProfileInt(L"Switches", L"EnableRestore", 1, CONFIG_FILE);
+    g_enableTransparencyUp = GetPrivateProfileInt(L"Switches", L"EnableTransparencyUp", 1, g_configFile);
+    g_enableTransparencyDown = GetPrivateProfileInt(L"Switches", L"EnableTransparencyDown", 1, g_configFile);
+    g_enableCenter = GetPrivateProfileInt(L"Switches", L"EnableCenter", 0, g_configFile);
+    g_enableShake = GetPrivateProfileInt(L"Switches", L"EnableShake", 0, g_configFile);
+    g_enableRestore = GetPrivateProfileInt(L"Switches", L"EnableRestore", 1, g_configFile);
 
     // 限制透明度步长范围
     if (g_transparencyStep < 1) g_transparencyStep = 1;
@@ -1101,41 +1173,41 @@ void SaveConfig()
 
     // 保存透明度步长
     swprintf(value, 32, L"%d", g_transparencyStep);
-    WritePrivateProfileString(L"Settings", L"TransparencyStep", value, CONFIG_FILE);
+    WritePrivateProfileString(L"Settings", L"TransparencyStep", value, g_configFile);
 
     // 保存热键配置
     swprintf(value, 32, L"%d", g_transparencyUpModifiers);
-    WritePrivateProfileString(L"Hotkeys", L"TransparencyUpModifiers", value, CONFIG_FILE);
+    WritePrivateProfileString(L"Hotkeys", L"TransparencyUpModifiers", value, g_configFile);
     swprintf(value, 32, L"%d", g_transparencyUpKey);
-    WritePrivateProfileString(L"Hotkeys", L"TransparencyUpKey", value, CONFIG_FILE);
+    WritePrivateProfileString(L"Hotkeys", L"TransparencyUpKey", value, g_configFile);
     swprintf(value, 32, L"%d", g_transparencyDownModifiers);
-    WritePrivateProfileString(L"Hotkeys", L"TransparencyDownModifiers", value, CONFIG_FILE);
+    WritePrivateProfileString(L"Hotkeys", L"TransparencyDownModifiers", value, g_configFile);
     swprintf(value, 32, L"%d", g_transparencyDownKey);
-    WritePrivateProfileString(L"Hotkeys", L"TransparencyDownKey", value, CONFIG_FILE);
+    WritePrivateProfileString(L"Hotkeys", L"TransparencyDownKey", value, g_configFile);
     swprintf(value, 32, L"%d", g_centerModifiers);
-    WritePrivateProfileString(L"Hotkeys", L"CenterModifiers", value, CONFIG_FILE);
+    WritePrivateProfileString(L"Hotkeys", L"CenterModifiers", value, g_configFile);
     swprintf(value, 32, L"%d", g_centerKey);
-    WritePrivateProfileString(L"Hotkeys", L"CenterKey", value, CONFIG_FILE);
+    WritePrivateProfileString(L"Hotkeys", L"CenterKey", value, g_configFile);
     swprintf(value, 32, L"%d", g_shakeModifiers);
-    WritePrivateProfileString(L"Hotkeys", L"ShakeModifiers", value, CONFIG_FILE);
+    WritePrivateProfileString(L"Hotkeys", L"ShakeModifiers", value, g_configFile);
     swprintf(value, 32, L"%d", g_shakeKey);
-    WritePrivateProfileString(L"Hotkeys", L"ShakeKey", value, CONFIG_FILE);
+    WritePrivateProfileString(L"Hotkeys", L"ShakeKey", value, g_configFile);
     swprintf(value, 32, L"%d", g_restoreModifiers);
-    WritePrivateProfileString(L"Hotkeys", L"RestoreModifiers", value, CONFIG_FILE);
+    WritePrivateProfileString(L"Hotkeys", L"RestoreModifiers", value, g_configFile);
     swprintf(value, 32, L"%d", g_restoreKey);
-    WritePrivateProfileString(L"Hotkeys", L"RestoreKey", value, CONFIG_FILE);
+    WritePrivateProfileString(L"Hotkeys", L"RestoreKey", value, g_configFile);
 
     // 保存热键开关状态
     swprintf(value, 32, L"%d", g_enableTransparencyUp ? 1 : 0);
-    WritePrivateProfileString(L"Switches", L"EnableTransparencyUp", value, CONFIG_FILE);
+    WritePrivateProfileString(L"Switches", L"EnableTransparencyUp", value, g_configFile);
     swprintf(value, 32, L"%d", g_enableTransparencyDown ? 1 : 0);
-    WritePrivateProfileString(L"Switches", L"EnableTransparencyDown", value, CONFIG_FILE);
+    WritePrivateProfileString(L"Switches", L"EnableTransparencyDown", value, g_configFile);
     swprintf(value, 32, L"%d", g_enableCenter ? 1 : 0);
-    WritePrivateProfileString(L"Switches", L"EnableCenter", value, CONFIG_FILE);
+    WritePrivateProfileString(L"Switches", L"EnableCenter", value, g_configFile);
     swprintf(value, 32, L"%d", g_enableShake ? 1 : 0);
-    WritePrivateProfileString(L"Switches", L"EnableShake", value, CONFIG_FILE);
+    WritePrivateProfileString(L"Switches", L"EnableShake", value, g_configFile);
     swprintf(value, 32, L"%d", g_enableRestore ? 1 : 0);
-    WritePrivateProfileString(L"Switches", L"EnableRestore", value, CONFIG_FILE);
+    WritePrivateProfileString(L"Switches", L"EnableRestore", value, g_configFile);
 }
 
 // 获取修饰键名称
