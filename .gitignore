@@ -1,0 +1,28 @@
+# Build artifacts
+*.exe
+*.o
+*.obj
+*.pdb
+*.ilk
+*.exp
+*.lib
+
+# Rust build
+Window2Clear-rs/target/
+
+# Debug
+debug.log
+
+# WorkBuddy
+.workbuddy/
+
+# Config (user-specific)
+Window2Clear/config.ini
+
+# IDE
+.vs/
+*.suo
+*.user
+*.ncb
+*.sdf
+*.opensdf

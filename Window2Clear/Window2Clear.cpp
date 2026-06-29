@@ -10,6 +10,29 @@
 #pragma comment(lib, "shell32.lib")
 #pragma comment(lib, "comctl32.lib")
 
+// 调试日志（生产环境关闭）
+//#define ENABLE_DEBUG_LOG
+#ifdef ENABLE_DEBUG_LOG
+#define DEBUG_LOG_FILE L"Z:\\Window2Clear\\debug.log"
+void DebugLog(const wchar_t* fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    wchar_t buf[1024];
+    vswprintf(buf, 1024, fmt, args);
+    va_end(args);
+    FILE* f = _wfopen(DEBUG_LOG_FILE, L"a");
+    if (f) {
+        SYSTEMTIME st;
+        GetLocalTime(&st);
+        fwprintf(f, L"[%02d:%02d:%02d.%03d] %s\n",
+            st.wHour, st.wMinute, st.wSecond, st.wMilliseconds, buf);
+        fclose(f);
+    }
+}
+#else
+#define DebugLog(...)
+#endif
+
 // 常量定义
 #define WM_TRAYICON (WM_USER + 1)
 #define ID_TRAY_EXIT 1001
@@ -18,6 +41,7 @@
 #define ID_HOTKEY_TRANSPARENCY_DOWN 2
 #define ID_HOTKEY_CENTER_WINDOW 3
 #define ID_HOTKEY_SHAKE_WINDOW 4
+#define ID_HOTKEY_RESTORE_OPACITY 5
 #define CONFIG_FILE L".\\config.ini"
 #define MAX_PATH_LEN 260
 #define APP_VERSION L"v0.2.0"
@@ -62,6 +86,22 @@ UINT g_shakeModifiers = MOD_ALT;             // 窗口抖动修饰键
 UINT g_shakeKey = VK_DOWN;                   // 窗口抖动按键
 BOOL g_enableShake = FALSE;                  // 是否启用窗口抖动功能
 
+// 恢复透明度热键设置
+UINT g_restoreModifiers = MOD_ALT;           // 恢复透明度修饰键
+UINT g_restoreKey = VK_UP;                   // 恢复透明度按键
+BOOL g_enableRestore = TRUE;                 // 是否启用恢复透明度功能
+
+// 透明窗口持久化
+#define MAX_TRANSPARENT_WINDOWS 64
+
+typedef struct {
+    HWND hwnd;
+    int alpha;
+} TransparentWindow;
+
+TransparentWindow g_transparentWindows[MAX_TRANSPARENT_WINDOWS];
+int g_transparentCount = 0;
+
 // 热键监听状态
 BOOL g_isListeningHotkey = FALSE;     // 是否正在监听热键输入
 int g_currentListeningType = 0;       // 当前监听类型: 0=无, 1=透明度增加, 2=透明度减少, 3=居中, 4=抖动
@@ -81,6 +121,10 @@ void UnregisterHotKeys(HWND hwnd);                // 注销全局热键
 void AdjustWindowTransparency(BOOL increase);     // 调整窗口透明度
 void CenterWindow();                              // 将窗口居中显示
 void ShakeWindow();                               // 窗口抖动效果
+void RestoreWindowOpacity();                      // 恢复窗口不透明
+int FindTransparentWindow(HWND hwnd);             // 查找已跟踪的透明窗口
+void TrackTransparentWindow(HWND hwnd, int alpha);// 跟踪透明窗口
+void UntrackTransparentWindow(HWND hwnd);         // 取消跟踪透明窗口
 void LoadConfig();                                // 从配置文件加载设置
 void SaveConfig();                                // 保存设置到配置文件
 HWND GetTopMostWindow();                          // 获取最上层窗口
@@ -142,7 +186,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
     // 显示启动提示
     wchar_t startupMsg[500];
-    swprintf_s(startupMsg, 500, L"Window2Clear %s 已启动！\n\n默认热键：\n- Alt+←/→ 调整窗口透明度\n- Ctrl+数字键5 窗口居中（需开启）\n- Alt+↓ 窗口抖动（需开启）\n\n右键点击托盘图标进行设置", APP_VERSION);
+    swprintf_s(startupMsg, 500, L"Window2Clear %s 已启动！\n\n默认热键：\n- Alt+←/→ 调整窗口透明度\n- Alt+↑ 恢复窗口不透明\n- Ctrl+数字键5 窗口居中（需开启）\n- Alt+↓ 窗口抖动（需开启）\n\n右键点击托盘图标进行设置", APP_VERSION);
     MessageBox(NULL, startupMsg, L"Window2Clear 启动成功", MB_OK | MB_ICONINFORMATION);
 
     // 消息循环
@@ -164,6 +208,46 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
     switch (uMsg) {
     case WM_CREATE:
+        // 10ms 定时器，快速检测并恢复
+        SetTimer(hwnd, 1, 10, NULL);
+        break;
+
+    case WM_TIMER:
+        if (wParam == 1) {
+            for (int i = g_transparentCount - 1; i >= 0; i--) {
+                HWND twHwnd = g_transparentWindows[i].hwnd;
+                if (!IsWindow(twHwnd)) {
+                    UntrackTransparentWindow(twHwnd);
+                    continue;
+                }
+
+                LONG es = GetWindowLong(twHwnd, GWL_EXSTYLE);
+                BOOL layered = (es & WS_EX_LAYERED) != 0;
+
+                // 读当前 alpha
+                BYTE curAlpha = 255;
+                COLORREF colorKey;
+                DWORD flags;
+                BOOL gotAlpha = FALSE;
+                if (layered) {
+                    gotAlpha = GetLayeredWindowAttributes(twHwnd, &colorKey, &curAlpha, &flags);
+                }
+
+                BYTE wantAlpha = (BYTE)g_transparentWindows[i].alpha;
+
+                // 只在确实需要时才写
+                if (!layered) {
+                    // WS_EX_LAYERED 被清了 → 必须重设
+                    SetWindowLong(twHwnd, GWL_EXSTYLE, es | WS_EX_LAYERED);
+                    SetLayeredWindowAttributes(twHwnd, 0, wantAlpha, LWA_ALPHA);
+                }
+                else if (gotAlpha && curAlpha != wantAlpha) {
+                    // alpha 被改了 → 只重设 alpha，不碰 style
+                    SetLayeredWindowAttributes(twHwnd, 0, wantAlpha, LWA_ALPHA);
+                }
+                // else: 一切正常，什么都不做
+            }
+        }
         break;
 
     case WM_HOTKEY:
@@ -179,6 +263,9 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
             break;
         case ID_HOTKEY_SHAKE_WINDOW:
             ShakeWindow(); // 窗口抖动
+            break;
+        case ID_HOTKEY_RESTORE_OPACITY:
+            RestoreWindowOpacity(); // 恢复窗口不透明
             break;
         }
         break;
@@ -201,6 +288,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
         break;
 
     case WM_DESTROY:
+        KillTimer(hwnd, 1);
         PostQuitMessage(0);
         break;
 
@@ -784,6 +872,11 @@ void RegisterHotKeys(HWND hwnd)
             MessageBox(hwnd, L"窗口抖动热键注册失败，可能与其他程序冲突", L"警告", MB_OK | MB_ICONWARNING);
         }
     }
+    if (g_enableRestore) {
+        if (!RegisterHotKey(hwnd, ID_HOTKEY_RESTORE_OPACITY, g_restoreModifiers, g_restoreKey)) {
+            MessageBox(hwnd, L"恢复透明度热键注册失败，可能与其他程序冲突", L"警告", MB_OK | MB_ICONWARNING);
+        }
+    }
 }
 
 // 注销全局热键
@@ -793,6 +886,7 @@ void UnregisterHotKeys(HWND hwnd)
     UnregisterHotKey(hwnd, ID_HOTKEY_TRANSPARENCY_DOWN);
     UnregisterHotKey(hwnd, ID_HOTKEY_CENTER_WINDOW);
     UnregisterHotKey(hwnd, ID_HOTKEY_SHAKE_WINDOW);
+    UnregisterHotKey(hwnd, ID_HOTKEY_RESTORE_OPACITY);
 }
 
 // 调整窗口透明度
@@ -831,15 +925,19 @@ HWND GetTopMostWindow()
 }
 
 // 设置窗口透明度
+// 只用 SetWindowLong + SetLayeredWindowAttributes，不调 SetWindowPos
+// 不加 WS_EX_TOPMOST，避免目标窗口因 z-order 变化重置自身样式
 void SetWindowTransparency(HWND hwnd, int alpha)
 {
     LONG exStyle = GetWindowLong(hwnd, GWL_EXSTYLE);
     if (alpha < 255) {
         SetWindowLong(hwnd, GWL_EXSTYLE, exStyle | WS_EX_LAYERED);
         SetLayeredWindowAttributes(hwnd, 0, (BYTE)alpha, LWA_ALPHA);
+        TrackTransparentWindow(hwnd, alpha);
     }
     else {
         SetWindowLong(hwnd, GWL_EXSTYLE, exStyle & ~WS_EX_LAYERED);
+        UntrackTransparentWindow(hwnd);
     }
 }
 
@@ -917,6 +1015,56 @@ void ShakeWindow()
     SetWindowPos(hwnd, NULL, originalX, originalY, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
 }
 
+// 恢复窗口不透明
+void RestoreWindowOpacity()
+{
+    HWND hwnd = GetTopMostWindow();
+    if (!hwnd || hwnd == g_hMainWnd || hwnd == g_hSettingsWnd) {
+        return;
+    }
+
+    int currentAlpha = GetWindowTransparency(hwnd);
+    if (currentAlpha < 255) {
+        SetWindowTransparency(hwnd, 255);  // 会自动 UntrackTransparentWindow
+    }
+}
+
+// 查找已跟踪的透明窗口，返回索引，未找到返回 -1
+int FindTransparentWindow(HWND hwnd)
+{
+    for (int i = 0; i < g_transparentCount; i++) {
+        if (g_transparentWindows[i].hwnd == hwnd) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+// 跟踪透明窗口
+void TrackTransparentWindow(HWND hwnd, int alpha)
+{
+    int idx = FindTransparentWindow(hwnd);
+    if (idx >= 0) {
+        g_transparentWindows[idx].alpha = alpha;
+        return;
+    }
+    if (g_transparentCount >= MAX_TRANSPARENT_WINDOWS) return;
+    g_transparentWindows[g_transparentCount].hwnd = hwnd;
+    g_transparentWindows[g_transparentCount].alpha = alpha;
+    g_transparentCount++;
+}
+
+// 取消跟踪透明窗口
+void UntrackTransparentWindow(HWND hwnd)
+{
+    int idx = FindTransparentWindow(hwnd);
+    if (idx < 0) return;
+    if (idx < g_transparentCount - 1) {
+        g_transparentWindows[idx] = g_transparentWindows[g_transparentCount - 1];
+    }
+    g_transparentCount--;
+}
+
 // 加载配置
 void LoadConfig()
 {
@@ -931,12 +1079,15 @@ void LoadConfig()
     g_centerKey = GetPrivateProfileInt(L"Hotkeys", L"CenterKey", VK_NUMPAD5, CONFIG_FILE);
     g_shakeModifiers = GetPrivateProfileInt(L"Hotkeys", L"ShakeModifiers", MOD_ALT, CONFIG_FILE);
     g_shakeKey = GetPrivateProfileInt(L"Hotkeys", L"ShakeKey", VK_DOWN, CONFIG_FILE);
+    g_restoreModifiers = GetPrivateProfileInt(L"Hotkeys", L"RestoreModifiers", MOD_ALT, CONFIG_FILE);
+    g_restoreKey = GetPrivateProfileInt(L"Hotkeys", L"RestoreKey", VK_UP, CONFIG_FILE);
 
     // 加载热键开关状态
     g_enableTransparencyUp = GetPrivateProfileInt(L"Switches", L"EnableTransparencyUp", 1, CONFIG_FILE);
     g_enableTransparencyDown = GetPrivateProfileInt(L"Switches", L"EnableTransparencyDown", 1, CONFIG_FILE);
     g_enableCenter = GetPrivateProfileInt(L"Switches", L"EnableCenter", 0, CONFIG_FILE);
     g_enableShake = GetPrivateProfileInt(L"Switches", L"EnableShake", 0, CONFIG_FILE);
+    g_enableRestore = GetPrivateProfileInt(L"Switches", L"EnableRestore", 1, CONFIG_FILE);
 
     // 限制透明度步长范围
     if (g_transparencyStep < 1) g_transparencyStep = 1;
@@ -969,6 +1120,10 @@ void SaveConfig()
     WritePrivateProfileString(L"Hotkeys", L"ShakeModifiers", value, CONFIG_FILE);
     swprintf(value, 32, L"%d", g_shakeKey);
     WritePrivateProfileString(L"Hotkeys", L"ShakeKey", value, CONFIG_FILE);
+    swprintf(value, 32, L"%d", g_restoreModifiers);
+    WritePrivateProfileString(L"Hotkeys", L"RestoreModifiers", value, CONFIG_FILE);
+    swprintf(value, 32, L"%d", g_restoreKey);
+    WritePrivateProfileString(L"Hotkeys", L"RestoreKey", value, CONFIG_FILE);
 
     // 保存热键开关状态
     swprintf(value, 32, L"%d", g_enableTransparencyUp ? 1 : 0);
@@ -979,6 +1134,8 @@ void SaveConfig()
     WritePrivateProfileString(L"Switches", L"EnableCenter", value, CONFIG_FILE);
     swprintf(value, 32, L"%d", g_enableShake ? 1 : 0);
     WritePrivateProfileString(L"Switches", L"EnableShake", value, CONFIG_FILE);
+    swprintf(value, 32, L"%d", g_enableRestore ? 1 : 0);
+    WritePrivateProfileString(L"Switches", L"EnableRestore", value, CONFIG_FILE);
 }
 
 // 获取修饰键名称

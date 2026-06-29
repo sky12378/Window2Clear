@@ -1,0 +1,16 @@
+[package]
+name = "window2clear"
+version = "0.3.0"
+edition = "2021"
+
+[dependencies]
+winapi = { version = "0.3", features = [
+    "winuser", "shellapi", "commctrl", "libloaderapi",
+    "sysinfoapi", "windef", "minwindef", "basetsd", "winnt",
+    "processthreadsapi", "errhandlingapi", "synchapi", "winbase",
+] }
+
+[profile.release]
+opt-level = "s"
+lto = true
+strip = true
